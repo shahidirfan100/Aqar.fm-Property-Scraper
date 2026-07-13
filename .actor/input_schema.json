@@ -1,0 +1,35 @@
+{
+  "title": "Aqar.fm Property Scraper",
+  "description": "Scrape real estate listings from Aqar.fm (Saudi Arabia). Provide a search URL or let the actor use defaults. Supports all property types: apartments, villas, lands, buildings, and more.",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "startUrl": {
+      "title": "Aqar.fm Search URL",
+      "type": "string",
+      "description": "Paste any Aqar.fm search URL, e.g. https://sa.aqar.fm/en/apartment-for-rent/riyadh or https://sa.aqar.fm/en/villa-for-sale/jeddah. Leave empty to scrape all listings.",
+      "editor": "textfield",
+      "prefill": "https://sa.aqar.fm/en/apartment-for-rent/riyadh"
+    },
+    "results_wanted": {
+      "title": "Maximum results",
+      "type": "integer",
+      "description": "Maximum number of listings to collect.",
+      "minimum": 1,
+      "default": 20,
+      "prefill": 20,
+      "editor": "number"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "Use Apify Proxy for reliable scraping.",
+      "editor": "proxy",
+      "default": {
+        "useApifyProxy": false
+      }
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

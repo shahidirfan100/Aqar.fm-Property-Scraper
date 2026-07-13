@@ -1,0 +1,67 @@
+{
+  "actorSpecification": 1,
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": [
+          "listing_id",
+          "title",
+          "price",
+          "area_m2",
+          "bedrooms",
+          "bathrooms",
+          "property_type",
+          "city",
+          "location",
+          "url"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "listing_id": {
+            "label": "ID",
+            "format": "text"
+          },
+          "title": {
+            "label": "Title",
+            "format": "text"
+          },
+          "price": {
+            "label": "Price (SAR)",
+            "format": "text"
+          },
+          "area_m2": {
+            "label": "Area",
+            "format": "text"
+          },
+          "bedrooms": {
+            "label": "Beds",
+            "format": "text"
+          },
+          "bathrooms": {
+            "label": "Baths",
+            "format": "text"
+          },
+          "property_type": {
+            "label": "Type",
+            "format": "text"
+          },
+          "city": {
+            "label": "City",
+            "format": "text"
+          },
+          "location": {
+            "label": "Location",
+            "format": "text"
+          },
+          "url": {
+            "label": "URL",
+            "format": "link"
+          }
+        }
+      }
+    }
+  }
+}
