@@ -4,6 +4,7 @@
 .zed
 dist
 node_modules
+package-lock.json
 apify_storage
 storage
 /.playwright-mcp
