@@ -3,7 +3,7 @@ FROM apify/actor-node:22
 COPY --chown=myuser:myuser package*.json ./
 
 RUN npm --quiet set progress=false \
-    && npm install --omit=dev \
+    && if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi \
     && echo "Installed NPM packages:" \
     && (npm list --omit=dev --all || true) \
     && echo "Node.js version:" \

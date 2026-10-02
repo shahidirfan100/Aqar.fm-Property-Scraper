@@ -32,9 +32,19 @@ Collect and archive property listings for portfolio analysis. Track changes in l
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `startUrl` | String | No | `https://sa.aqar.fm/en/all` | URL to start scraping (listing or detail page) |
-| `results_wanted` | Integer | No | `20` | Maximum number of results to collect |
-| `proxyConfiguration` | Object | No | — | Apify Proxy configuration |
+| `startUrl` | String | No | `https://sa.aqar.fm/en/all` | Search or listing URL. Takes priority over the filters below. |
+| `propertyType` | String | No | — | Property category (e.g. apartment-for-rent, villa-for-sale). Used only when no URL is provided. |
+| `location` | String | No | — | City slug (riyadh, jeddah, dammam...). Requires a property type when no URL is provided. |
+| `minPrice` | Integer | No | — | Minimum price in SAR. |
+| `maxPrice` | Integer | No | — | Maximum price in SAR. |
+| `bedrooms` | Integer | No | — | Minimum number of bedrooms. |
+| `bathrooms` | Integer | No | — | Minimum number of bathrooms. |
+| `furnished` | Boolean | No | `false` | Only furnished listings. |
+| `family` | String | No | — | `family` or `singles`. |
+| `results_wanted` | Integer | No | `20` | Maximum number of results to collect. |
+| `proxyConfiguration` | Object | No | — | Apify Proxy configuration. |
+
+> Note: Result sorting is handled client-side by Aqar.fm and is not available through the server-rendered pages, so no sort option is exposed. All filters listed above are verified to work through Aqar.fm URL query parameters.
 
 ---
 

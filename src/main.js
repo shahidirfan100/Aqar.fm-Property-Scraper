@@ -7,29 +7,157 @@ await Actor.init();
 
 const input = (await Actor.getInput()) || {};
 const {
-    startUrl,
-    results_wanted: RESULTS_WANTED = 20,
+    startUrl: rawStartUrl,
+    propertyType: rawPropertyType,
+    location: rawLocation,
+    minPrice: rawMinPrice,
+    maxPrice: rawMaxPrice,
+    bedrooms: rawBedrooms,
+    bathrooms: rawBathrooms,
+    furnished: rawFurnished,
+    family: rawFamily,
+    results_wanted: rawResultsWanted,
     proxyConfiguration,
 } = input;
 
-const RESULTS_WANTED_N = Number.isFinite(+RESULTS_WANTED) ? Math.max(1, +RESULTS_WANTED) : 20;
+const DEFAULT_START_URL = 'https://sa.aqar.fm/en/all';
+const DEFAULT_RESULTS_WANTED = 20;
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_FETCH_ATTEMPTS = 3;
 
-const initial = [];
-if (startUrl) initial.push(startUrl);
-if (!initial.length) {
-    initial.push('https://sa.aqar.fm/en/all');
+// Property types verified to return listings at https://sa.aqar.fm/en/<slug>.
+const SUPPORTED_PROPERTY_TYPES = new Set([
+    'apartment-for-rent',
+    'apartment-for-sale',
+    'villa-for-rent',
+    'villa-for-sale',
+    'land-for-rent',
+    'land-for-sale',
+    'building-for-rent',
+    'building-for-sale',
+    'big-flat-for-rent',
+    'room-for-rent',
+    'office-for-rent',
+    'store-for-rent',
+    'store-for-sale',
+    'warehouse-for-rent',
+    'chalet-for-rent',
+    'farm-for-sale',
+]);
+
+// Query params the site actually honors. `sort` is NOT supported server-side.
+function normalizeStartUrl(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+        return trimmed;
+    } catch {
+        return null;
+    }
 }
 
-const isApifyCloud = Actor.isAtHome();
-const proxyConf = proxyConfiguration?.useApifyProxy && isApifyCloud
-    ? await Actor.createProxyConfiguration({ ...proxyConfiguration })
-    : null;
+function toPositiveInt(value) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
-const proxyUrl = proxyConf ? await proxyConf.newUrl() : undefined;
+function slugify(value) {
+    return String(value ?? '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
+const filterParams = [];
+const minPrice = toPositiveInt(rawMinPrice);
+const maxPrice = toPositiveInt(rawMaxPrice);
+if (minPrice) filterParams.push(['price', `gte,${minPrice}`]);
+if (maxPrice) filterParams.push(['price', `lte,${maxPrice}`]);
+if (minPrice && maxPrice && maxPrice < minPrice) {
+    log.warning(`maxPrice (${maxPrice}) is lower than minPrice (${minPrice}); results may be empty.`);
+}
+const minBedrooms = toPositiveInt(rawBedrooms);
+if (minBedrooms) filterParams.push(['beds', `gte,${minBedrooms}`]);
+const minBathrooms = toPositiveInt(rawBathrooms);
+if (minBathrooms) filterParams.push(['wc', `gte,${minBathrooms}`]);
+if (rawFurnished === true) filterParams.push(['furnished', 'eq,1']);
+if (rawFamily === 'family') filterParams.push(['family', 'eq,1']);
+else if (rawFamily === 'singles') filterParams.push(['family', 'eq,0']);
+
+function buildCategoryUrl() {
+    const type = slugify(rawPropertyType);
+    if (!type || !SUPPORTED_PROPERTY_TYPES.has(type)) return null;
+    const city = slugify(rawLocation);
+    return city ? `https://sa.aqar.fm/en/${type}/${city}` : `https://sa.aqar.fm/en/${type}`;
+}
+
+let startUrl = normalizeStartUrl(rawStartUrl);
+if (rawStartUrl && !startUrl) {
+    log.warning(`Ignoring invalid startUrl "${String(rawStartUrl).slice(0, 120)}"; using options instead.`);
+}
+if (!startUrl) {
+    if (rawPropertyType && !SUPPORTED_PROPERTY_TYPES.has(slugify(rawPropertyType))) {
+        log.warning(`Unsupported propertyType "${rawPropertyType}"; ignoring it.`);
+    }
+    const builtUrl = buildCategoryUrl();
+    if (builtUrl) {
+        startUrl = builtUrl;
+    } else {
+        if (rawLocation) log.warning('A location was provided without a supported property type; location ignored.');
+        startUrl = DEFAULT_START_URL;
+    }
+}
+
+const resolvedUrl = new URL(startUrl);
+for (const key of new Set(filterParams.map(([filterKey]) => filterKey))) {
+    resolvedUrl.searchParams.delete(key);
+}
+for (const [key, value] of filterParams) {
+    resolvedUrl.searchParams.append(key, value);
+}
+const ACTIVE_QUERY = resolvedUrl.searchParams.toString() ? `?${resolvedUrl.searchParams.toString()}` : '';
+startUrl = resolvedUrl.toString().replace(/\/$/, '');
+
+const parsedResultsWanted = Number.parseInt(rawResultsWanted, 10);
+const RESULTS_WANTED_N = Number.isFinite(parsedResultsWanted) && parsedResultsWanted > 0
+    ? parsedResultsWanted
+    : DEFAULT_RESULTS_WANTED;
+
+const initial = [startUrl];
+
+function sleep(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+async function setupProxy(rawProxyConfiguration) {
+    const wantsProxy = Boolean(rawProxyConfiguration) && (
+        rawProxyConfiguration.useApifyProxy === true
+        || (Array.isArray(rawProxyConfiguration.proxyUrls) && rawProxyConfiguration.proxyUrls.length > 0)
+    );
+    if (!wantsProxy) return undefined;
+
+    try {
+        const proxyConf = await Actor.createProxyConfiguration({ ...rawProxyConfiguration });
+        return proxyConf ? await proxyConf.newUrl() : undefined;
+    } catch (error) {
+        log.warning(`Proxy setup failed (${error.message}); continuing without proxy.`);
+        return undefined;
+    }
+}
+
+const proxyUrl = await setupProxy(proxyConfiguration);
 
 const client = new Impit({
     browser: 'chrome',
     ignoreTlsErrors: true,
+    timeout: REQUEST_TIMEOUT_MS,
     ...(proxyUrl && { proxyUrl }),
 });
 
@@ -49,9 +177,16 @@ function hasArea(text) {
     return /m²|م²|m\s*2/i.test(text);
 }
 
+function getPathname(rawUrl) {
+    try {
+        return new URL(rawUrl, 'https://sa.aqar.fm').pathname;
+    } catch {
+        return String(rawUrl).split('?')[0];
+    }
+}
+
 function parseUrlMeta(rawUrl) {
-    const cleaned = decodeURIComponent(rawUrl).replace('https://sa.aqar.fm', '');
-    const parts = cleaned.split('/').filter(Boolean);
+    const parts = decodeURIComponent(getPathname(rawUrl)).split('/').filter(Boolean);
     if (parts[0] === 'en') {
         return { propertyType: parts[1] || null, city: parts[2] || null };
     }
@@ -106,7 +241,12 @@ const DETAIL_CONCURRENCY = 5;
 const MAX_RESULT_PAGES = Math.max(10, Math.ceil(RESULTS_WANTED_N / 10) * 3);
 
 function isDetailUrl(url) {
-    return /-\d{4,}$/.test(url.replace(/\/$/, ''));
+    return /-\d{4,}$/.test(getPathname(url).replace(/\/$/, ''));
+}
+
+function getListingId(url) {
+    const match = getPathname(url).match(/-(\d{4,})\/?$/);
+    return match ? match[1] : null;
 }
 
 function normalizeAqarUrl(rawUrl, baseUrl = 'https://sa.aqar.fm') {
@@ -118,11 +258,20 @@ function normalizeAqarUrl(rawUrl, baseUrl = 'https://sa.aqar.fm') {
     }
 }
 
+function applyActiveFilters(url) {
+    if (!ACTIVE_QUERY) return url;
+    const parsed = new URL(url);
+    parsed.search = ACTIVE_QUERY;
+    return parsed.toString();
+}
+
 function enqueuePage(rawUrl, baseUrl, options = {}) {
     if (pageQueue.length + SEEN_PAGES.size >= MAX_RESULT_PAGES) return;
 
-    const url = normalizeAqarUrl(rawUrl, baseUrl);
-    if (!url || !url.startsWith('https://sa.aqar.fm/') || SEEN_PAGES.has(url) || pageQueue.includes(url)) return;
+    let url = normalizeAqarUrl(rawUrl, baseUrl);
+    if (!url || !url.startsWith('https://sa.aqar.fm/')) return;
+    if (!isDetailUrl(url) && ACTIVE_QUERY) url = applyActiveFilters(url);
+    if (SEEN_PAGES.has(url) || pageQueue.includes(url)) return;
     if (isDetailUrl(url) && !options.allowDetail) return;
 
     pageQueue.push(url);
@@ -161,8 +310,7 @@ function enqueueDiscoveredPages(html, sourceUrl) {
 function extractDetailListing(html, sourceUrl) {
     const $ = cheerio.load(html);
 
-    const idMatch = sourceUrl.match(/-(\d{4,})$/);
-    const listingId = idMatch ? idMatch[1] : null;
+    const listingId = getListingId(sourceUrl);
     if (!listingId) return null;
 
     const title = $('h1').first().text().trim() || null;
@@ -311,26 +459,46 @@ function extractListingCards(html, limit) {
 }
 
 async function fetchHtml(url) {
-    const response = await client.fetch(url);
+    let lastError;
 
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt++) {
+        try {
+            const response = await client.fetch(url, { timeout: REQUEST_TIMEOUT_MS });
+            const { status } = response;
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${status}`);
+            }
+
+            const html = await response.text();
+            if (!html || html.length < 1000) {
+                throw new Error('Empty response');
+            }
+
+            return html;
+        } catch (error) {
+            lastError = error;
+            const isRetryableClientError = /HTTP 4\d\d/.test(error.message) && !/HTTP 429/.test(error.message);
+            if (isRetryableClientError || attempt >= MAX_FETCH_ATTEMPTS) throw error;
+            await sleep(500 * 2 ** (attempt - 1));
+        }
     }
 
-    const html = await response.text();
-    if (!html || html.length < 1000) {
-        throw new Error('Empty response');
-    }
-
-    return html;
+    throw lastError ?? new Error('Fetch failed');
 }
 
 async function flushData(force = false) {
     if (dataBuffer.length === 0 || (!force && dataBuffer.length < BATCH_SIZE)) return;
 
     const batch = dataBuffer.splice(0, dataBuffer.length);
-    await Dataset.pushData(batch);
-    log.info(`Saved ${saved}/${RESULTS_WANTED_N} items`);
+    try {
+        await Dataset.pushData(batch);
+    } catch (error) {
+        dataBuffer.unshift(...batch);
+        log.warning(`Failed to save batch (${error.message}); will retry.`);
+        return;
+    }
+    log.debug(`Saved ${saved}/${RESULTS_WANTED_N} items`);
 }
 
 async function saveItem(item) {
@@ -357,7 +525,7 @@ async function enrichListing(cardItem) {
             gallery_urls: detailItem.gallery_urls ?? cardItem.gallery_urls ?? null,
         };
     } catch (error) {
-        log.warning(`Detail fetch failed: ${error.message}`);
+        log.debug(`Detail fetch failed: ${error.message}`);
         return cardItem;
     }
 }
@@ -377,7 +545,7 @@ async function fetchAndExtract(urls) {
             if (isDetailUrl(url)) {
                 const detailItem = extractDetailListing(html, url);
                 if (!await saveItem(detailItem)) {
-                    log.warning(`No listing found on ${url}`);
+                    log.debug(`No listing found on ${url}`);
                 }
                 continue;
             }
@@ -406,8 +574,6 @@ async function fetchAndExtract(urls) {
 
                 if (saved >= RESULTS_WANTED_N) break;
             }
-
-            log.info(`Processed ${SEEN_PAGES.size} result pages; queue ${pageQueue.length}; saved ${saved}/${RESULTS_WANTED_N}`);
         } catch (error) {
             log.warning(`Skipped one page: ${error.message}`);
         }
@@ -416,17 +582,35 @@ async function fetchAndExtract(urls) {
     await flushData(true);
 }
 
+async function flushWithRetry(attempts = 3) {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        if (dataBuffer.length === 0) return;
+        await flushData(true);
+        if (dataBuffer.length === 0) return;
+        if (attempt < attempts) await sleep(1000 * attempt);
+    }
+    if (dataBuffer.length > 0) {
+        log.error(`Could not save ${dataBuffer.length} buffered items after retries.`);
+    }
+}
+
 async function main() {
-    log.info(`Aqar.fm Property Scraper — ${initial.length} URL(s), ${RESULTS_WANTED_N} results max`);
+    log.info(`Aqar.fm Property Scraper — start: ${startUrl}`);
+    log.info(`Requested results: ${RESULTS_WANTED_N}${proxyUrl ? ' (proxy enabled)' : ''}`);
 
     await fetchAndExtract(initial);
+    await flushWithRetry();
 
     log.info(`Done. ${saved} properties saved.`);
 }
 
-await main().catch(err => {
-    log.error(err.message);
-    process.exit(1);
-});
-
-await Actor.exit();
+try {
+    await main();
+    if (saved === 0) {
+        log.warning('No properties were extracted. Verify the start URL is a valid Aqar.fm listing or search page.');
+    }
+    await Actor.exit();
+} catch (error) {
+    log.error(`Actor failed: ${error.message}`);
+    await Actor.fail(`Actor failed: ${error.message}`);
+}

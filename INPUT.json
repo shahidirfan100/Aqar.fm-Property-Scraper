@@ -1,4 +1,6 @@
 {
-    "startUrl": "https://sa.aqar.fm/en/apartment-for-rent/riyadh",
-    "results_wanted": 20
+    "propertyType": "apartment-for-rent",
+    "location": "riyadh",
+    "bedrooms": 3,
+    "results_wanted": 10
 }

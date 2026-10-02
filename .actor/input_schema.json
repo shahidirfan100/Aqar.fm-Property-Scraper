@@ -1,15 +1,110 @@
 {
   "title": "Aqar.fm Property Scraper",
-  "description": "Scrape real estate listings from Aqar.fm (Saudi Arabia). Provide a search URL or let the actor use defaults. Supports all property types: apartments, villas, lands, buildings, and more.",
+  "description": "Scrape real estate listings from Aqar.fm (Saudi Arabia). Provide a search URL and/or use the supported filters below.",
   "type": "object",
   "schemaVersion": 1,
   "properties": {
     "startUrl": {
       "title": "Aqar.fm Search URL",
       "type": "string",
-      "description": "Paste any Aqar.fm search URL, e.g. https://sa.aqar.fm/en/apartment-for-rent/riyadh or https://sa.aqar.fm/en/villa-for-sale/jeddah. Leave empty to scrape all listings.",
+      "description": "Paste any Aqar.fm search or listing URL, e.g. https://sa.aqar.fm/en/apartment-for-rent/riyadh. When set, it takes priority over Property type and Location. Leave empty to build the URL from the filters below.",
       "editor": "textfield",
       "prefill": "https://sa.aqar.fm/en/apartment-for-rent/riyadh"
+    },
+    "propertyType": {
+      "title": "Property type",
+      "type": "string",
+      "description": "Used only when no search URL is provided. Supported categories verified against Aqar.fm.",
+      "editor": "select",
+      "default": "",
+      "enum": [
+        "",
+        "apartment-for-rent",
+        "apartment-for-sale",
+        "villa-for-rent",
+        "villa-for-sale",
+        "land-for-rent",
+        "land-for-sale",
+        "building-for-rent",
+        "building-for-sale",
+        "big-flat-for-rent",
+        "room-for-rent",
+        "office-for-rent",
+        "store-for-rent",
+        "store-for-sale",
+        "warehouse-for-rent",
+        "chalet-for-rent",
+        "farm-for-sale"
+      ],
+      "enumTitles": [
+        "Any",
+        "Apartment for rent",
+        "Apartment for sale",
+        "Villa for rent",
+        "Villa for sale",
+        "Land for rent",
+        "Land for sale",
+        "Building for rent",
+        "Building for sale",
+        "Floor for rent",
+        "Room for rent",
+        "Office for rent",
+        "Store for rent",
+        "Store for sale",
+        "Warehouse for rent",
+        "Chalet for rent",
+        "Farm for sale"
+      ]
+    },
+    "location": {
+      "title": "Location (city)",
+      "type": "string",
+      "description": "City slug such as riyadh, jeddah, dammam, makkah, madinah. Requires a property type when no search URL is provided.",
+      "editor": "textfield"
+    },
+    "minPrice": {
+      "title": "Minimum price (SAR)",
+      "type": "integer",
+      "minimum": 0,
+      "description": "Only include listings at or above this price.",
+      "editor": "number"
+    },
+    "maxPrice": {
+      "title": "Maximum price (SAR)",
+      "type": "integer",
+      "minimum": 0,
+      "description": "Only include listings at or below this price.",
+      "editor": "number"
+    },
+    "bedrooms": {
+      "title": "Minimum bedrooms",
+      "type": "integer",
+      "minimum": 1,
+      "description": "Only include listings with at least this many bedrooms.",
+      "editor": "number"
+    },
+    "bathrooms": {
+      "title": "Minimum bathrooms",
+      "type": "integer",
+      "minimum": 1,
+      "description": "Only include listings with at least this many bathrooms.",
+      "editor": "number"
+    },
+    "furnished": {
+      "title": "Furnished only",
+      "type": "boolean",
+      "default": false,
+      "description": "Only include furnished listings.",
+      "editor": "checkbox"
+    },
+    "family": {
+      "title": "Family or singles",
+      "type": "string",
+      "description": "Filter listings advertised for families or for singles.",
+      "editor": "select",
+      "default": "",
+      "enum": ["", "family", "singles"],
+      "enumTitles": ["Any", "Families", "Singles"]
     },
     "results_wanted": {
       "title": "Maximum results",
@@ -23,7 +118,7 @@
     "proxyConfiguration": {
       "title": "Proxy configuration",
       "type": "object",
-      "description": "Use Apify Proxy for reliable scraping.",
+      "description": "Use Apify Proxy or custom proxies for reliable scraping.",
       "editor": "proxy",
       "default": {
         "useApifyProxy": false
